@@ -1,0 +1,123 @@
+
+//incluye bibliotecas necesarias
+#include <stdint.h>
+#include <inc/tm4c1294ncpdt.h>
+#include <stdbool.h>
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/gpio.h"
+#include "driverlib/timer.h"
+#include "driverlib/interrupt.h"
+
+// Definiciones de los pines de los LEDs
+#define LED_PORT_N GPIO_PORTN_BASE
+#define LED_PORT_F GPIO_PORTF_BASE
+#define LED_PIN_1  GPIO_PIN_1 // PN1
+#define LED_PIN_2  GPIO_PIN_0 // PN0
+#define LED_PIN_3  GPIO_PIN_4 // PF4
+#define LED_PIN_4  GPIO_PIN_0 // PF0
+
+// Variable global para controlar el estado de los LEDs
+volatile uint8_t ledState = 0;// se usa volatil para cambiar fuera de flujo normal como con interupciones
+
+// Prototipos de funciones
+void ConfigureLEDs(void);
+void ConfigureTimer(void);
+void Timer1IntHandler(void);
+void SetLEDs(uint8_t state);
+
+// Función para configurar los LEDs, habilita puertos Ny F y con figura como salidas
+void ConfigureLEDs(void)
+{
+    // Habilitar los puertos GPIO para los LEDs
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPION); // Puerto N
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF); // Puerto F
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPION));
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOF));
+
+    // Configurar los pines como salida
+    GPIOPinTypeGPIOOutput(LED_PORT_N, LED_PIN_1 | LED_PIN_2);
+    GPIOPinTypeGPIOOutput(LED_PORT_F, LED_PIN_3 | LED_PIN_4);
+}
+
+// Función para configurar el Timer1
+void ConfigureTimer(void)
+{
+    uint32_t g_ui32SysClock = SysCtlClockFreqSet((SYSCTL_XTAL_25MHZ |
+                                                   SYSCTL_OSC_MAIN |
+                                                   SYSCTL_USE_PLL |
+                                                   SYSCTL_CFG_VCO_240), 120000000); // Configurar el reloj a 120MHz
+
+    // Habilitar el Timer1
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_TIMER1));
+
+    // Configurar Timer1 en modo periódico
+    TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC);
+    TimerLoadSet(TIMER1_BASE, TIMER_A, g_ui32SysClock * 2); // Interrupción cada 2 segundos
+
+    // Habilitar la interrupción del Timer1
+    TimerIntRegister(TIMER1_BASE, TIMER_A, Timer1IntHandler);
+    IntEnable(INT_TIMER1A);
+    TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+
+    // Habilitar interrupciones globales
+    IntMasterEnable();
+
+    // Activar el Timer1
+    TimerEnable(TIMER1_BASE, TIMER_A);
+}
+
+// Función para manejar la interrupción del Timer1
+void Timer1IntHandler(void)
+{
+    // Limpiar la interrupción del Timer1
+    TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+
+    // Cambiar el estado de los LEDs según la secuencia
+    SetLEDs(ledState);
+
+    // Incrementar el estado para el siguiente ciclo
+    ledState = (ledState + 1) % 4;// % 4 awegura que el estado del led este etr 0 y 3, hay 4 estados de led
+}
+
+// Función para establecer los LEDs según el estado
+void SetLEDs(uint8_t state)
+{
+    switch (state)
+    {
+        case 0:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1, LED_PIN_1); // Solo LED 1
+            GPIOPinWrite(LED_PORT_N, LED_PIN_2, 0); // Apagar LED 2
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3, 0); // Apagar LED 3
+            GPIOPinWrite(LED_PORT_F, LED_PIN_4, 0); // Apagar LED 4
+            break;
+        case 1:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1 | LED_PIN_2, LED_PIN_1 | LED_PIN_2); // LED 1 y 2
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3, 0); // Apagar LED 3
+            GPIOPinWrite(LED_PORT_F, LED_PIN_4, 0); // Apagar LED 4
+            break;
+        case 2:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1 | LED_PIN_2, LED_PIN_1 | LED_PIN_2); // LED 1 y 2
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3, LED_PIN_3); // encender LED 3
+            GPIOPinWrite(LED_PORT_F, LED_PIN_4, 0); // Apagar LED 4
+            break;
+        case 3:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1 | LED_PIN_2, LED_PIN_1 | LED_PIN_2); // LED 1 y 2
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3 | LED_PIN_4, LED_PIN_3 | LED_PIN_4); // LED 3 y 4
+            break;
+    }
+}
+
+int main(void)
+{
+    // Configurar los LEDs
+    ConfigureLEDs();
+
+    // Configurar el Timer1
+    ConfigureTimer();
+
+    // Bucle infinito
+    while(1);
+}

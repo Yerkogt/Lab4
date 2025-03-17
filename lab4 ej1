@@ -1,0 +1,81 @@
+#include <stdint.h> //definiciones de enterso estandar como uint8_t ledState 
+#include <stdbool.h>// incluye booleanos
+#include <inc/tm4c1294ncpdt.h>//incluye definiciones para el microcontrolador pese a ser de otra placa
+#include "inc/hw_memmap.h"// mapa de memoria para el hardware defini direcciones de los perifericos
+#include "inc/hw_types.h"// definicion de tipo de datos
+#include "driverlib/sysctl.h"// funciones de la biblioteca lib pra control de perifericos, clock
+#include "driverlib/gpio.h"// control de gpio
+#include "driverlib/timer.h"// control de timers
+#include "driverlib/interrupt.h"//control de interupciones
+
+#define LED_PORT      GPIO_PORTN_BASE
+#define LED_PIN       GPIO_PIN_1
+#define SYSTEM_CLOCK  120000000      // 120 MHz equialente total a 1 segunfo
+#define TIMER_PERIOD  (SYSTEM_CLOCK * 5)  // 5 segundos
+
+
+void ConfigureClock(void);
+void ConfigureLED(void);
+void ConfigureTimer1A(void);
+void Timer1IntHandler(void);
+
+int main(void)
+{
+    
+    ConfigureClock();
+    ConfigureLED();
+    ConfigureTimer1A();
+
+    
+    while(1);
+}
+
+// Configura el reloj del sistema a 120 MHz
+void ConfigureClock(void)
+{
+    SysCtlClockFreqSet((SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN |
+                        SYSCTL_USE_PLL | SYSCTL_CFG_VCO_240), SYSTEM_CLOCK);//configurar la frecuencia del reloj del sistema a 120 MHz utilizando un cristal de 25 MHz, oscilador principal, PLL y VCO de 240 MHz.
+}
+
+
+void ConfigureLED(void)
+{
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPION);//habilita el perefiferico gpio puerto n
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPION));//espera que el perfiferico n este listo
+    GPIOPinTypeGPIOOutput(LED_PORT, LED_PIN);//se lo declara como salida
+}
+
+
+void ConfigureTimer1A(void)
+{
+    // Habilitar el módulo Timer1
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);//habilita el timer 1
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_TIMER1));// espera hasta que este habilitado
+
+    // Configurar Timer1A en modo periódico de 32 bits
+    TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC);// se confugira en modo periodico
+    TimerLoadSet(TIMER1_BASE, TIMER_A, TIMER_PERIOD - 1);// carga el valor preteterminado, cuando llega a cero genera una interrumpcion y luego lo recarga automaticamente en este caso 5 segundos
+
+    // Registrar el manejador de la interrupción del Timer1A
+    TimerIntRegister(TIMER1_BASE, TIMER_A, Timer1IntHandler);
+
+    // Habilitar la interrupción para el Timer1A y la interrupción global
+    TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);//habiulita la interupcion
+    IntEnable(INT_TIMER1A);
+    IntMasterEnable();//se vuelve global
+
+    // Iniciar el Timer1A
+    TimerEnable(TIMER1_BASE, TIMER_A);//inicia
+}
+
+// Manejador de la interrupción del Timer1A
+void Timer1IntHandler(void)
+{
+    // Limpiar la bandera de interrupción
+    TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);//cuadno llegue a cero genra una interupcion  y establece una bandera
+
+    // Leer el estado actual del LED y alternarlo
+    uint8_t ledState = GPIOPinRead(LED_PORT, LED_PIN);//almacena valores sin signo de 8 bits
+    GPIOPinWrite(LED_PORT, LED_PIN, ledState ^ LED_PIN);// cambia el estado del led
+}
+

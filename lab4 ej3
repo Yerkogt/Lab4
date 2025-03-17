@@ -1,0 +1,125 @@
+#include <stdint.h>
+#include <inc/tm4c1294ncpdt.h>
+#include <stdbool.h>
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/gpio.h"
+#include "driverlib/timer.h"
+#include "driverlib/interrupt.h"
+
+// Definiciones de los pines de los LEDs
+#define LED_PORT_N GPIO_PORTN_BASE
+#define LED_PORT_F GPIO_PORTF_BASE
+#define LED_PIN_1  GPIO_PIN_1 // PN1
+#define LED_PIN_2  GPIO_PIN_0 // PN0
+#define LED_PIN_3  GPIO_PIN_4 // PF4
+#define LED_PIN_4  GPIO_PIN_0 // PF0
+
+// Definiciones de los pines de los interruptores
+#define SWITCH_PORT GPIO_PORTJ_BASE
+#define SWITCH_PIN_0 GPIO_PIN_0 // PJ0
+#define SWITCH_PIN_1 GPIO_PIN_1 // PJ1
+
+// Variable global para controlar el estado de los LEDs
+volatile uint8_t ledState = 0;
+
+
+void ConfigureLEDs(void);
+void ConfigureTimer(void);
+void ConfigureSwitches(void);
+void Timer1IntHandler(void);
+void SetLEDs(uint8_t state);
+uint32_t GetTimerInterval(uint32_t sysClock);
+
+// Función para configurar los LEDs habilita el gpio n y  f
+void ConfigureLEDs(void) {
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPION);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPION));
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOF));
+    GPIOPinTypeGPIOOutput(LED_PORT_N, LED_PIN_1 | LED_PIN_2);
+    GPIOPinTypeGPIOOutput(LED_PORT_F, LED_PIN_3 | LED_PIN_4);
+}
+
+// Función para configurar los interruptores habilita gpio j con ppull up interna
+void ConfigureSwitches(void) {
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOJ);
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOJ));
+    GPIOPinTypeGPIOInput(SWITCH_PORT, SWITCH_PIN_0 | SWITCH_PIN_1);
+    GPIOPadConfigSet(SWITCH_PORT, SWITCH_PIN_0 | SWITCH_PIN_1, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU); // pull up
+}
+
+// Función para configurar el Timer1
+void ConfigureTimer(void) {
+    uint32_t g_ui32SysClock = SysCtlClockFreqSet((SYSCTL_XTAL_25MHZ |
+                                                   SYSCTL_OSC_MAIN |
+                                                   SYSCTL_USE_PLL |
+                                                   SYSCTL_CFG_VCO_240), 120000000);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
+    while (!SysCtlPeripheralReady(SYSCTL_PERIPH_TIMER1));
+    TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC);
+    TimerLoadSet(TIMER1_BASE, TIMER_A, GetTimerInterval(g_ui32SysClock));
+    TimerIntRegister(TIMER1_BASE, TIMER_A, Timer1IntHandler);
+    IntEnable(INT_TIMER1A);
+    TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+    IntMasterEnable();
+    TimerEnable(TIMER1_BASE, TIMER_A);
+}
+
+// Funcion que lee el estado de los botos y cambia el sysclock
+uint32_t GetTimerInterval(uint32_t sysClock) {
+    uint8_t switchState = GPIOPinRead(SWITCH_PORT, SWITCH_PIN_0 | SWITCH_PIN_1);
+    if (!(switchState & SWITCH_PIN_0)) {
+        return sysClock; // 1 segundo
+    } else if (!(switchState & SWITCH_PIN_1)) {
+        return sysClock / 2; // 0.5 segundos
+    } else {
+        return sysClock; // 1 segundo por defecto
+    }
+}
+
+// Función para manejar la interrupción del Timer1
+void Timer1IntHandler(void) {
+    TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+    SetLEDs(ledState);
+    ledState = (ledState + 1) % 4;
+    uint32_t g_ui32SysClock = SysCtlClockFreqSet((SYSCTL_XTAL_25MHZ |
+                                                   SYSCTL_OSC_MAIN |
+                                                   SYSCTL_USE_PLL |
+                                                   SYSCTL_CFG_VCO_240), 120000000);
+    TimerLoadSet(TIMER1_BASE, TIMER_A, GetTimerInterval(g_ui32SysClock));
+}
+
+// Función para establecer los LEDs según el estado
+void SetLEDs(uint8_t state) {
+    switch (state) {
+        case 0:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1, LED_PIN_1);
+            GPIOPinWrite(LED_PORT_N, LED_PIN_2, 0);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3, 0);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_4, 0);
+            break;
+        case 1:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1 | LED_PIN_2, LED_PIN_1 | LED_PIN_2);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3, 0);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_4, 0);
+            break;
+        case 2:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1 | LED_PIN_2, LED_PIN_1 | LED_PIN_2);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3, LED_PIN_3);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_4, 0);
+            break;
+        case 3:
+            GPIOPinWrite(LED_PORT_N, LED_PIN_1 | LED_PIN_2, LED_PIN_1 | LED_PIN_2);
+            GPIOPinWrite(LED_PORT_F, LED_PIN_3 | LED_PIN_4, LED_PIN_3 | LED_PIN_4);
+            break;
+    }
+}
+
+int main(void) {
+    ConfigureLEDs();
+    ConfigureSwitches();
+    ConfigureTimer();
+    while (1);
+}
