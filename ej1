@@ -1,0 +1,21 @@
+import RPi.GPIO as GPIO
+import time
+
+BUZZER_PIN = 18
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUZZER_PIN, GPIO.OUT)
+
+def sonido (duration=0.5,frequency=1000):
+	pwm = GPIO.PWM(BUZZER_PIN, frequency)
+	pwm.start(50)
+	time.sleep(duration)
+	pwm.stop()
+try:
+    while True:
+        sonido (0.5,1000)
+        time.sleep(1)
+except KeyboardInterrupt:
+	print("Saliendo")
+	GPIO.cleanup()
+

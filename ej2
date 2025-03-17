@@ -1,0 +1,33 @@
+import RPi.GPIO as GPIO
+import time
+###
+BUZZER_PIN = 18
+BOTON1 = 23
+BOTON2 = 24
+contador = 0 
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUZZER_PIN, GPIO.OUT)
+GPIO.setup(BOTON1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BOTON2, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+def sonido (duration=0.5,frequency=1000):
+	pwm = GPIO.PWM(BUZZER_PIN, frequency)
+	pwm.start(50)
+	time.sleep(duration)
+	pwm.stop()
+try:
+    while True:
+        if GPIO.input(BOTON1)==GPIO.LOW:
+            contador +=1
+            time.sleep(0.3)
+            print(f"Contador:{contador}")
+        if GPIO.input(BOTON2)==GPIO.LOW:
+            contador-=1
+            time.sleep(0.3)
+            print(f"Contadoe:{contador}")
+        if contador==1:
+            sonido (0.5,1000)
+            time.sleep(1)
+except KeyboardInterrupt:
+	print("Saliendo")
+	GPIO.cleanup()
+
